@@ -41,31 +41,17 @@ def completion(
     model_obj = AutoDistributedModelForCausalLM.from_pretrained(model)
     model_obj = model_obj.cuda()
 
-    prompt = ""
-    for message in messages:
-        if "role" in message:
-            if message["role"] == "user":
-                prompt += (
-                    f"{message['content']}"
-                )
-            else:
-                prompt += (
-                    f"{message['content']}"
-                )
-        else:
-            prompt += f"{message['content']}"
-    
-
+    prompt = "".join(f"{message['content']}" for message in messages)
     ## LOGGING
     logging_obj.pre_call(
             input=prompt,
             api_key="",
             additional_args={"complete_input_dict": optional_params},
         )
-    
+
     ## COMPLETION CALL
     inputs = tokenizer(prompt, return_tensors="pt")["input_ids"].cuda()
-    
+
     # optional params: max_new_tokens=1,temperature=0.9, top_p=0.6
     outputs = model_obj.generate(inputs, **optional_params)
 
@@ -82,7 +68,7 @@ def completion(
 
     prompt_tokens = len(
         encoding.encode(prompt)
-    ) 
+    )
     completion_tokens = len(
         encoding.encode(model_response["choices"][0]["message"]["content"])
     )

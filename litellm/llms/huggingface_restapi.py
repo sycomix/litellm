@@ -65,7 +65,7 @@ def completion(
                 if text != "":
                     past_user_inputs.append(text)
                 text = message["content"]
-            elif message["role"] == "assistant" or message["role"] == "system":
+            elif message["role"] in ["assistant", "system"]:
                 generated_responses.append(message["content"])
         data = {
             "inputs": {
@@ -94,16 +94,18 @@ def completion(
             data = {
                 "inputs": prompt,
                 "parameters": inference_params,
-                "stream": True if "stream" in inference_params and inference_params["stream"] == True else False,
+                "stream": "stream" in inference_params
+                and inference_params["stream"] == True,
             }
         else:
             data = {
                 "inputs": prompt,
                 "parameters": optional_params,
-                "stream": True if "stream" in optional_params and optional_params["stream"] == True else False,
+                "stream": "stream" in optional_params
+                and optional_params["stream"] == True,
             }
         input_text = prompt
-    elif task == "other" or task == None:
+    elif task == "other" or task is None:
         if model in custom_prompt_dict:
             # check if the model has a registered custom prompt
             model_prompt_details = custom_prompt_dict[model]
@@ -121,7 +123,8 @@ def completion(
         data = {
             "inputs": prompt,
             "parameters": inference_params,
-            "stream": True if "stream" in optional_params and optional_params["stream"] == True else False,
+            "stream": "stream" in optional_params
+            and optional_params["stream"] == True,
         }
         input_text = prompt
     ## LOGGING
@@ -175,13 +178,16 @@ def completion(
             elif task == "text-generation-inference": 
                 model_response["choices"][0]["message"][
                     "content"
-                ] = completion_response[0]["generated_text"]   
-                ## GETTING LOGPROBS + FINISH REASON 
+                ] = completion_response[0]["generated_text"]
+                ## GETTING LOGPROBS + FINISH REASON
                 if "details" in completion_response[0] and "tokens" in completion_response[0]["details"]:
                     model_response.choices[0].finish_reason = completion_response[0]["details"]["finish_reason"]
-                    sum_logprob = 0
-                    for token in completion_response[0]["details"]["tokens"]:
-                        sum_logprob += token["logprob"]
+                    sum_logprob = sum(
+                        token["logprob"]
+                        for token in completion_response[0]["details"][
+                            "tokens"
+                        ]
+                    )
                     model_response["choices"][0]["message"]["logprobs"] = sum_logprob
             else:
                 model_response["choices"][0]["message"]["content"] = completion_response[0]["generated_text"]

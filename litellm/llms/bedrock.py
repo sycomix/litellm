@@ -75,18 +75,9 @@ def completion(
     provider = model.split(".")[0]
     prompt = ""
     for message in messages:
-        if "role" in message:
-            if message["role"] == "user":
-                prompt += (
-                    f"{message['content']}"
-                )
-            else:
-                prompt += (
-                    f"{message['content']}"
-                )
-        else:
-            prompt += f"{message['content']}"
-    
+        prompt += (
+            f"{message['content']}"
+        )
     if provider == "ai21":
         data = json.dumps({
             "prompt": prompt,
@@ -96,14 +87,14 @@ def completion(
         data = json.dumps({
             "inputText": prompt, 
             "textGenerationConfig": optional_params,
-            }) 
+            })
     ## LOGGING
     logging_obj.pre_call(
             input=prompt,
             api_key="",
             additional_args={"complete_input_dict": data},
         )
-    
+
     ## COMPLETION CALL
     accept = 'application/json'
     contentType = 'application/json'
@@ -144,16 +135,15 @@ def completion(
             message=outputText,
             status_code=response.status_code,
         )
-    else:
-        try:
-            model_response["choices"][0]["message"]["content"] = outputText
-        except:
-            raise BedrockError(message=json.dumps(outputText), status_code=response.status_code)
+    try:
+        model_response["choices"][0]["message"]["content"] = outputText
+    except:
+        raise BedrockError(message=json.dumps(outputText), status_code=response.status_code)
 
     ## CALCULATING USAGE - baseten charges on time, not tokens - have some mapping of cost here. 
     prompt_tokens = len(
         encoding.encode(prompt)
-    ) 
+    )
     completion_tokens = len(
         encoding.encode(model_response["choices"][0]["message"]["content"])
     )

@@ -29,7 +29,6 @@ def test_completion_with_empty_model():
         response = completion(model=model_val, messages=messages)
     except Exception as e:
         print(f"error occurred: {e}")
-        pass
 
 
 def test_completion_with_no_provider():
@@ -39,7 +38,6 @@ def test_completion_with_no_provider():
         response = completion(model=model, messages=messages)
     except Exception as e:
         print(f"error occurred: {e}")
-        pass
 
 test_completion_with_no_provider()
 # # bad key

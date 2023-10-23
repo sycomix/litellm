@@ -90,14 +90,16 @@ def test_completion_with_litellm_call_id():
             model="gpt-3.5-turbo", messages=messages)
         print(response)
         if 'litellm_call_id' in response:
-            pytest.fail(f"Error occurred: litellm_call_id in response objects")
-        
+            pytest.fail("Error occurred: litellm_call_id in response objects")
+
         litellm.use_client = True
         response2 = completion(
             model="gpt-3.5-turbo", messages=messages)
-        
+
         if 'litellm_call_id' not in response2:
-            pytest.fail(f"Error occurred: litellm_call_id not in response object when use_client = True")
+            pytest.fail(
+                "Error occurred: litellm_call_id not in response object when use_client = True"
+            )
         # Add any assertions here to check the response
         print(response2)
     except Exception as e:

@@ -58,7 +58,7 @@ def test_user_budget_not_enough():
 
         print(f"response: {response}")
     except:
-        pytest.fail(f"An error occurred")
+        pytest.fail("An error occurred")
 
 ## Scenario 3: Saving budget to client 
 def test_save_user_budget():
@@ -68,7 +68,7 @@ def test_save_user_budget():
             raise Exception(f"An error occurred - {json.dumps(response)}")
         print(response)
     except:
-        pytest.fail(f"An error occurred")
+        pytest.fail("An error occurred")
 
 ## Scenario 4: Getting list of users 
 def test_get_users():
@@ -76,7 +76,7 @@ def test_get_users():
         response = budget_manager.get_users()
         print(response)
     except:
-        pytest.fail(f"An error occurred") 
+        pytest.fail("An error occurred") 
 
 
 ## Scenario 5: Reset budget at the end of duration 
@@ -95,7 +95,9 @@ def test_reset_on_duration():
             response = litellm.completion(**data)
             print(budget_manager.update_cost(completion_obj=response, user=user))
 
-        assert budget_manager.get_current_cost(user) > 0, f"Test setup failed: Budget did not decrease after completion"
+        assert (
+            budget_manager.get_current_cost(user) > 0
+        ), "Test setup failed: Budget did not decrease after completion"
 
         # Now, we need to simulate the passing of time. Since we don't want our tests to actually take days, we're going
         # to cheat a little -- we'll manually adjust the "created_at" time so it seems like a day has passed.
@@ -107,7 +109,7 @@ def test_reset_on_duration():
         budget_manager.update_budget_all_users()
 
         # Make sure the budget was actually reset
-        assert budget_manager.get_current_cost(user) == 0, "Budget didn't reset after duration expired" 
+        assert budget_manager.get_current_cost(user) == 0, "Budget didn't reset after duration expired"
     except Exception as e:
         pytest.fail(f"An error occurred - {str(e)}")
 

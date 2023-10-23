@@ -81,7 +81,7 @@ last_fetched_at_keys = None
 # }
 
 def _generate_id(): # private helper function
-    return 'chatcmpl-' + str(uuid.uuid4())
+    return f'chatcmpl-{str(uuid.uuid4())}'
 
 class Message(OpenAIObject):
     def __init__(self, content="default", role="assistant", logprobs=None, **params):
@@ -111,10 +111,7 @@ class StreamingChoices(OpenAIObject):
         super(StreamingChoices, self).__init__(**params)
         self.finish_reason = finish_reason
         self.index = index
-        if delta:
-            self.delta = delta
-        else:
-            self.delta = Delta()
+        self.delta = delta if delta else Delta()
 
 class ModelResponse(OpenAIObject):
     def __init__(self, id=None, choices=None, created=None, model=None, usage=None, stream=False, **params):
@@ -127,14 +124,8 @@ class ModelResponse(OpenAIObject):
             else:
                 self.object = "chat.completion"
             self.choices = self.choices = choices if choices else [Choices()]
-        if id is None:
-            self.id = _generate_id()
-        else:
-            self.id = id
-        if created is None:
-            self.created = int(time.time())
-        else:
-            self.created = created
+        self.id = _generate_id() if id is None else id
+        self.created = int(time.time()) if created is None else created
         self.model = model
         self.usage = (
             usage
@@ -300,7 +291,7 @@ class Logging:
                     print_verbose(
                         f"LiteLLM.LoggingError: [Non-Blocking] Exception occurred while logging {traceback.format_exc()}"
                     )
-            
+
             # Input Integration Logging -> If you want to log the fact that an attempt to call the model was made
             for callback in litellm.input_callback:
                 try:
@@ -327,13 +318,10 @@ class Logging:
             print_verbose(
                 f"LiteLLM.LoggingError: [Non-Blocking] Exception occurred while logging {traceback.format_exc()}"
             )
-            pass
 
     
     def success_handler(self, result, start_time=None, end_time=None):
-        print_verbose(
-                f"Logging Details LiteLLM-Success Call"
-            )
+        print_verbose("Logging Details LiteLLM-Success Call")
         try:
             if start_time is None:
                 start_time = self.start_time
@@ -348,7 +336,10 @@ class Logging:
 
             for callback in litellm.success_callback:
                 try:
-                    if callback == "lite_debugger":
+                    if callback == "api_manager":
+                        print_verbose("reaches api manager for updating model cost")
+                        litellm.apiManager.update_cost(completion_obj=result, user=self.user)
+                    elif callback == "lite_debugger":
                         print_verbose("reaches lite_debugger for logging!")
                         print_verbose(f"liteDebuggerClient: {liteDebuggerClient}")
                         print_verbose(f"liteDebuggerClient details function {self.call_type} and stream set to {self.stream}")
@@ -362,12 +353,7 @@ class Logging:
                             call_type = self.call_type, 
                             stream = self.stream,
                         )
-                    if callback == "api_manager":
-                        print_verbose("reaches api manager for updating model cost")
-                        litellm.apiManager.update_cost(completion_obj=result, user=self.user)
                     if callback == "cache":
-                        # print("entering logger first time")
-                        # print(self.litellm_params["stream_response"])
                         if litellm.cache != None and self.model_call_details.get('optional_params', {}).get('stream', False) == True:
                             litellm_call_id = self.litellm_params["litellm_call_id"]
                             if litellm_call_id in self.litellm_params["stream_response"]:
@@ -397,12 +383,9 @@ class Logging:
             print_verbose(
                 f"LiteLLM.LoggingError: [Non-Blocking] Exception occurred while success logging {traceback.format_exc()}"
             )
-            pass
 
     def failure_handler(self, exception, traceback_exception, start_time=None, end_time=None):
-        print_verbose(
-                f"Logging Details LiteLLM-Failure Call"
-            )
+        print_verbose("Logging Details LiteLLM-Failure Call")
         try:
             if start_time is None:
                 start_time = self.start_time
@@ -450,7 +433,6 @@ class Logging:
             print_verbose(
                 f"LiteLLM.LoggingError: [Non-Blocking] Exception occurred while failure logging {traceback.format_exc()}"
             )
-            pass
 
 
 def exception_logging(
@@ -480,7 +462,6 @@ def exception_logging(
         print(
             f"LiteLLM.LoggingError: [Non-Blocking] Exception occurred while logging {traceback.format_exc()}"
         )
-        pass
 
 
 ####### CLIENT ###################
@@ -489,13 +470,13 @@ def client(original_function):
     global liteDebuggerClient, get_all_keys
 
     def function_setup(
-        start_time, *args, **kwargs
-    ):  # just run once to check if user wants to send their data anywhere - PostHog/Sentry/Slack/etc.
+            start_time, *args, **kwargs
+        ):  # just run once to check if user wants to send their data anywhere - PostHog/Sentry/Slack/etc.
         try:
             global callback_list, add_breadcrumb, user_logger_fn, Logging
             function_id = kwargs["id"] if "id" in kwargs else None
             if litellm.use_client or ("use_client" in kwargs and kwargs["use_client"] == True): 
-                print_verbose(f"litedebugger initialized")
+                print_verbose("litedebugger initialized")
                 if "lite_debugger" not in litellm.input_callback:
                     litellm.input_callback.append("lite_debugger")
                 if "lite_debugger" not in litellm.success_callback:
@@ -529,24 +510,23 @@ def client(original_function):
             # CRASH REPORTING TELEMETRY
             crash_reporting(*args, **kwargs)
             # INIT LOGGER - for user-specified integrations
-            model = args[0] if len(args) > 0 else kwargs["model"]
+            model = args[0] if args else kwargs["model"]
             call_type = original_function.__name__
             if call_type == CallTypes.completion.value:
                 messages = args[1] if len(args) > 1 else kwargs["messages"]
             elif call_type == CallTypes.embedding.value:
                 messages = args[1] if len(args) > 1 else kwargs["input"]
-            stream = True if "stream" in kwargs and kwargs["stream"] == True else False
+            stream = "stream" in kwargs and kwargs["stream"] == True
             logging_obj = Logging(model=model, messages=messages, stream=stream, litellm_call_id=kwargs["litellm_call_id"], function_id=function_id, call_type=call_type, start_time=start_time)
             return logging_obj
         except Exception as e:  # DO NOT BLOCK running the function because of this
             print_verbose(f"[Non-Blocking] {traceback.format_exc()}; args - {args}; kwargs - {kwargs}")
             print(e)
-        pass
-    
+
     def crash_reporting(*args, **kwargs):
         if litellm.telemetry:
             try:
-                model = args[0] if len(args) > 0 else kwargs["model"]
+                model = args[0] if args else kwargs["model"]
                 exception = kwargs["exception"] if "exception" in kwargs else None
                 custom_llm_provider = (
                     kwargs["custom_llm_provider"]
@@ -568,7 +548,7 @@ def client(original_function):
         litellm_call_id = str(uuid.uuid4())
         kwargs["litellm_call_id"] = litellm_call_id
         try:
-            model = args[0] if len(args) > 0 else kwargs["model"]
+            model = args[0] if args else kwargs["model"]
         except:
             raise ValueError("model param not passed in.")
 
@@ -589,7 +569,7 @@ def client(original_function):
             if kwargs.get("caching", False): # allow users to control returning cached responses from the completion function
                 # checking cache
                 if (litellm.cache != None or litellm.caching or litellm.caching_with_models):
-                    print_verbose(f"LiteLLM: Checking Cache")
+                    print_verbose("LiteLLM: Checking Cache")
                     cached_result = litellm.cache.get_cache(*args, **kwargs)
                     if cached_result != None:
                         return cached_result
@@ -600,12 +580,12 @@ def client(original_function):
             if "stream" in kwargs and kwargs["stream"] == True:
                 # TODO: Add to cache for streaming
                 return result
-        
+
 
             # [OPTIONAL] ADD TO CACHE
             if litellm.caching or litellm.caching_with_models or litellm.cache != None: # user init a cache object
                 litellm.cache.add_cache(result, *args, **kwargs)
-            
+
             # [OPTIONAL] Return LiteLLM call_id
             if litellm.use_client == True:
                 result['litellm_call_id'] = litellm_call_id
@@ -636,6 +616,7 @@ def client(original_function):
                 ):  # make it easy to get to the debugger logs if you've initialized it
                     e.message += f"\n Check the log in your dashboard - {liteDebuggerClient.dashboard_url}"
             raise e
+
     return wrapper
 
 
@@ -685,26 +666,20 @@ def token_counter(model="", text=None, messages = None):
     # text: raw text string passed to model
     # messages: List of Dicts passed to completion, messages = [{"role": "user", "content": "hello"}]
     # use tiktoken or anthropic's tokenizer depending on the model
-    if text == None:
+    if text is None:
         if messages != None:
             text = " ".join([message["content"] for message in messages])
     num_tokens = 0
 
-    if model != None and "claude" in model:
-        try:
-            import anthropic
-        except Exception:
-            # if importing anthropic fails
-            # don't raise an exception
-            num_tokens = len(encoding.encode(text))
-            return num_tokens
-
-        from anthropic import Anthropic, HUMAN_PROMPT, AI_PROMPT
-        anthropic = Anthropic()
-        num_tokens = anthropic.count_tokens(text)
-    else:
-        num_tokens = len(encoding.encode(text))
-    return num_tokens
+    if model is None or "claude" not in model:
+        return len(encoding.encode(text))
+    try:
+        import anthropic
+    except Exception:
+        return len(encoding.encode(text))
+    from anthropic import Anthropic, HUMAN_PROMPT, AI_PROMPT
+    anthropic = Anthropic()
+    return anthropic.count_tokens(text)
 
 
 def cost_per_token(model="gpt-3.5-turbo", prompt_tokens=0, completion_tokens=0):
@@ -719,7 +694,6 @@ def cost_per_token(model="gpt-3.5-turbo", prompt_tokens=0, completion_tokens=0):
         completion_tokens_cost_usd_dollar = (
             model_cost_ref[model]["output_cost_per_token"] * completion_tokens
         )
-        return prompt_tokens_cost_usd_dollar, completion_tokens_cost_usd_dollar
     else:
         # calculate average input cost
         input_cost_sum = 0
@@ -732,7 +706,8 @@ def cost_per_token(model="gpt-3.5-turbo", prompt_tokens=0, completion_tokens=0):
         avg_output_cost = output_cost_sum / len(model_cost_ref.keys())
         prompt_tokens_cost_usd_dollar = avg_input_cost * prompt_tokens
         completion_tokens_cost_usd_dollar = avg_output_cost * completion_tokens
-        return prompt_tokens_cost_usd_dollar, completion_tokens_cost_usd_dollar
+
+    return prompt_tokens_cost_usd_dollar, completion_tokens_cost_usd_dollar
 
 
 def completion_cost(
@@ -771,15 +746,15 @@ def completion_cost(
         # Handle Inputs to completion_cost
         prompt_tokens = 0
         completion_tokens = 0
-        if completion_response != None:
+        if completion_response is None:
+            prompt_tokens = token_counter(model=model, text=prompt)
+            completion_tokens = token_counter(model=model, text=completion)
+
+        else:
             # get input/output tokens from completion_response
             prompt_tokens = completion_response['usage']['prompt_tokens']
             completion_tokens = completion_response['usage']['completion_tokens']
             model = completion_response['model'] # get model from completion_response
-        else:
-            prompt_tokens = token_counter(model=model, text=prompt)
-            completion_tokens = token_counter(model=model, text=completion)
-        
         # Calculate cost based on prompt_tokens, completion_tokens
         if "togethercomputer" in model:
             # together ai prices based on size of llm
@@ -816,7 +791,7 @@ def get_litellm_params(
     model_alias_map=None,
     completion_call_id=None
 ):
-    litellm_params = {
+    return {
         "return_async": return_async,
         "api_key": api_key,
         "force_timeout": force_timeout,
@@ -827,10 +802,8 @@ def get_litellm_params(
         "litellm_call_id": litellm_call_id,
         "model_alias_map": model_alias_map,
         "completion_call_id": completion_call_id,
-        "stream_response": {} # litellm_call_id: ModelResponse Dict
+        "stream_response": {},  # litellm_call_id: ModelResponse Dict
     }
-
-    return litellm_params
 
 
 def get_optional_params(  # use the openai defaults
@@ -1143,70 +1116,61 @@ def get_llm_provider(model: str, custom_llm_provider: Optional[str] = None):
 
 def get_api_key(llm_provider: str, dynamic_api_key: Optional[str]):
     api_key = (dynamic_api_key or litellm.api_key)
-    # openai 
-    if llm_provider == "openai" or llm_provider == "text-completion-openai":
+    # openai
+    if llm_provider in {"openai", "text-completion-openai"}:
         api_key = (
                 api_key or
                 litellm.openai_key or
                 get_secret("OPENAI_API_KEY")
             )
-    # anthropic 
     elif llm_provider == "anthropic":
         api_key = (
                 api_key or
                 litellm.anthropic_key or
                 get_secret("ANTHROPIC_API_KEY")
             )
-    # ai21 
     elif llm_provider == "ai21":
         api_key = (
                 api_key or
                 litellm.ai21_key or
                 get_secret("AI211_API_KEY")
         )
-    # aleph_alpha 
     elif llm_provider == "aleph_alpha":
         api_key = (
                 api_key or
                 litellm.aleph_alpha_key or
                 get_secret("ALEPH_ALPHA_API_KEY")
         )
-    # baseten 
     elif llm_provider == "baseten":
         api_key = (
                 api_key or
                 litellm.baseten_key or
                 get_secret("BASETEN_API_KEY")
         )
-    # cohere 
     elif llm_provider == "cohere":
         api_key = (
                 api_key or
                 litellm.cohere_key or
                 get_secret("COHERE_API_KEY")
         )
-    # huggingface 
     elif llm_provider == "huggingface":
         api_key = (
                 api_key or
                 litellm.huggingface_key or
                 get_secret("HUGGINGFACE_API_KEY")
         )
-    # nlp_cloud 
     elif llm_provider == "nlp_cloud":
         api_key = (
                 api_key or
                 litellm.nlp_cloud_key or
                 get_secret("NLP_CLOUD_API_KEY")
         )
-    # replicate 
     elif llm_provider == "replicate":
         api_key = (
                 api_key or
                 litellm.replicate_key or
                 get_secret("REPLICATE_API_KEY")
         )
-    # together_ai 
     elif llm_provider == "together_ai":
         api_key = (
                 api_key or
@@ -1230,12 +1194,8 @@ def load_test_model(
     num_calls: int = 0,
     force_timeout: int = 0,
 ):
-    test_prompt = "Hey, how's it going"
-    test_calls = 100
-    if prompt:
-        test_prompt = prompt
-    if num_calls:
-        test_calls = num_calls
+    test_prompt = prompt if prompt else "Hey, how's it going"
+    test_calls = num_calls if num_calls else 100
     messages = [[{"role": "user", "content": test_prompt}] for _ in range(test_calls)]
     start_time = time.time()
     try:
@@ -1303,11 +1263,7 @@ def set_callbacks(callback_list, function_id=None):
                     )
                     import sentry_sdk
                 sentry_sdk_instance = sentry_sdk
-                sentry_trace_rate = (
-                    os.environ.get("SENTRY_API_TRACE_RATE")
-                    if "SENTRY_API_TRACE_RATE" in os.environ
-                    else "1.0"
-                )
+                sentry_trace_rate = os.environ.get("SENTRY_API_TRACE_RATE", "1.0")
                 sentry_sdk_instance.init(
                     dsn=os.environ.get("SENTRY_API_URL"),
                     traces_sample_rate=float(sentry_trace_rate),
@@ -1357,10 +1313,10 @@ def set_callbacks(callback_list, function_id=None):
             elif callback == "berrispend":
                 berrispendLogger = BerriSpendLogger()
             elif callback == "supabase":
-                print_verbose(f"instantiating supabase")
+                print_verbose("instantiating supabase")
                 supabaseClient = Supabase()
             elif callback == "lite_debugger":
-                print_verbose(f"instantiating lite_debugger")
+                print_verbose("instantiating lite_debugger")
                 if function_id:
                     liteDebuggerClient = LiteDebugger(email=function_id)
                 elif litellm.token:
@@ -1415,7 +1371,7 @@ def handle_failure(exception, traceback_exception, start_time, end_time, args, k
                         ph_obj = kwargs
                     if len(args) > 0:
                         for i, arg in enumerate(args):
-                            ph_obj["litellm_args_" + str(i)] = arg
+                            ph_obj[f"litellm_args_{str(i)}"] = arg
                     for detail in additional_details:
                         ph_obj[detail] = additional_details[detail]
                     event_name = additional_details["Event_Name"]
@@ -1428,7 +1384,7 @@ def handle_failure(exception, traceback_exception, start_time, end_time, args, k
                     else:  # PostHog calls require a unique id to identify a user - https://posthog.com/docs/libraries/python
                         unique_id = str(uuid.uuid4())
                         posthog.capture(unique_id, event_name)
-                        print_verbose(f"successfully logged to PostHog!")
+                        print_verbose("successfully logged to PostHog!")
                 elif callback == "berrispend":
                     print_verbose("reaches berrispend for logging!")
                     model = args[0] if len(args) > 0 else kwargs["model"]
@@ -1528,19 +1484,15 @@ def handle_failure(exception, traceback_exception, start_time, end_time, args, k
                 print_verbose(
                     f"Error Occurred while logging failure: {traceback.format_exc()}"
                 )
-                pass
-
         if failure_handler and callable(failure_handler):
             call_details = {
                 "exception": exception,
                 "additional_details": additional_details,
             }
             failure_handler(call_details)
-        pass
     except Exception as e:
         # LOGGING
         exception_logging(logger_fn=user_logger_fn, exception=e)
-        pass
 
 
 def handle_success(args, kwargs, result, start_time, end_time):
@@ -1560,9 +1512,7 @@ def handle_success(args, kwargs, result, start_time, end_time):
         for callback in litellm.success_callback:
             try:
                 if callback == "posthog":
-                    ph_obj = {}
-                    for detail in additional_details:
-                        ph_obj[detail] = additional_details[detail]
+                    ph_obj = {detail: additional_details[detail] for detail in additional_details}
                     event_name = additional_details["Event_Name"]
                     if "user_id" in additional_details:
                         posthog.capture(
@@ -1571,11 +1521,11 @@ def handle_success(args, kwargs, result, start_time, end_time):
                     else:  # PostHog calls require a unique id to identify a user - https://posthog.com/docs/libraries/python
                         unique_id = str(uuid.uuid4())
                         posthog.capture(unique_id, event_name, ph_obj)
-                    pass
                 elif callback == "slack":
-                    slack_msg = ""
-                    for detail in additional_details:
-                        slack_msg += f"{detail}: {additional_details[detail]}\n"
+                    slack_msg = "".join(
+                        f"{detail}: {additional_details[detail]}\n"
+                        for detail in additional_details
+                    )
                     slack_app.client.chat_postMessage(
                         channel=alerts_channel, text=slack_msg
                     )
@@ -1678,18 +1628,14 @@ def handle_success(args, kwargs, result, start_time, end_time):
                 print_verbose(
                     f"[Non-Blocking] Success Callback Error - {traceback.format_exc()}"
                 )
-                pass
-
         if success_handler and callable(success_handler):
             success_handler(args, kwargs)
-        pass
     except Exception as e:
         # LOGGING
         exception_logging(logger_fn=user_logger_fn, exception=e)
         print_verbose(
             f"[Non-Blocking] Success Callback Error - {traceback.format_exc()}"
         )
-        pass
 
 
 def acreate(*args, **kwargs):  ## Thin client to handle the acreate langchain call
@@ -1700,18 +1646,16 @@ def prompt_token_calculator(model, messages):
     # use tiktoken or anthropic's tokenizer depending on the model
     text = " ".join(message["content"] for message in messages)
     num_tokens = 0
-    if "claude" in model:
-        try:
-            import anthropic
-        except:
-            Exception("Anthropic import failed please run `pip install anthropic`")
-        from anthropic import Anthropic, HUMAN_PROMPT, AI_PROMPT
+    if "claude" not in model:
+        return len(encoding.encode(text))
+    try:
+        import anthropic
+    except:
+        Exception("Anthropic import failed please run `pip install anthropic`")
+    from anthropic import Anthropic, HUMAN_PROMPT, AI_PROMPT
 
-        anthropic = Anthropic()
-        num_tokens = anthropic.count_tokens(text)
-    else:
-        num_tokens = len(encoding.encode(text))
-    return num_tokens
+    anthropic = Anthropic()
+    return anthropic.count_tokens(text)
 
 
 def valid_model(model):
@@ -1736,9 +1680,7 @@ def check_valid_key(model: str, api_key: str):
     try:
         litellm.completion(model=model, messages=messages, api_key=api_key, max_tokens=10)
         return True
-    except AuthenticationError as e:
-        return False
-    except Exception as e:
+    except (AuthenticationError, Exception) as e:
         return False
 
 # integration helper function
@@ -1788,19 +1730,20 @@ def get_all_keys(llm_provider=None):
         global last_fetched_at_keys
         # if user is using hosted product -> instantiate their env with their hosted api keys - refresh every 5 minutes
         print_verbose(f"Reaches get all keys, llm_provider: {llm_provider}")
-        user_email = (
+        if user_email := (
             os.getenv("LITELLM_EMAIL")
             or litellm.email
             or litellm.token
             or os.getenv("LITELLM_TOKEN")
-        )
-        if user_email:
+        ):
             time_delta = 0
             if last_fetched_at_keys != None:
                 current_time = time.time()
                 time_delta = current_time - last_fetched_at_keys
             if (
-                time_delta > 300 or last_fetched_at_keys == None or llm_provider
+                time_delta > 300
+                or last_fetched_at_keys is None
+                or llm_provider
             ):  # if the llm provider is passed in , assume this happening due to an AuthError for that provider
                 # make the api call
                 last_fetched_at = time.time()
@@ -1827,20 +1770,17 @@ def get_all_keys(llm_provider=None):
         print_verbose(
             f"[Non-Blocking Error] get_all_keys error - {traceback.format_exc()}"
         )
-        pass
 
 
 def get_model_list():
     global last_fetched_at
     try:
-        # if user is using hosted product -> get their updated model list
-        user_email = (
+        if user_email := (
             os.getenv("LITELLM_EMAIL")
             or litellm.email
             or litellm.token
             or os.getenv("LITELLM_TOKEN")
-        )
-        if user_email:
+        ):
             # make the api call
             last_fetched_at = time.time()
             print(f"last_fetched_at: {last_fetched_at}")
@@ -1851,18 +1791,7 @@ def get_model_list():
             )
             print_verbose(f"get_model_list response: {response.text}")
             data = response.json()
-            # update model list
-            model_list = data["model_list"]
-            # # check if all model providers are in environment
-            # model_providers = data["model_providers"]
-            # missing_llm_provider = None
-            # for item in model_providers:
-            #     if f"{item.upper()}_API_KEY" not in os.environ:
-            #         missing_llm_provider = item
-            #         break
-            # # update environment - if required
-            # threading.Thread(target=get_all_keys, args=(missing_llm_provider)).start()
-            return model_list
+            return data["model_list"]
         return []  # return empty list by default
     except:
         print_verbose(
